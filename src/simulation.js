@@ -19,6 +19,7 @@ export class Simulation {
     this.impacts = 0;
     this.lastPhysicsError = "";
     this.onImpact = onImpact;
+    this.emissionWindows = null;
   }
 
   evaluateCurrents(t) {
@@ -105,11 +106,15 @@ export class Simulation {
         this.emissions.advanceEmission(
           interval,
           this.settings.fireRate,
-          (offset) =>
+          (offset) => {
+            const t = startTime + offset * FUNCTION_TIME_SCALE;
+            if (this.emissionWindows && !this.emissionWindows.some(
+              ([start, end]) => t >= start - 1e-12 && t < end - 1e-12,
+            )) return;
             this.cloud.launch(
-              { voltage: this.settings.voltage },
-              startClock + offset,
-            ),
+              { voltage: this.settings.voltage }, startClock + offset,
+            );
+          },
         );
       }
       try {

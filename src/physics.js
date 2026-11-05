@@ -55,8 +55,6 @@ function inside(r, box, tolerance = 0) {
   );
 }
 
-// The Lorentz force does no work: |p| and speed remain constant. Within each
-// uniform field this exact helix replaces numerical time integration.
 function motion(r, u, direction, k) {
   if (Math.abs(k) < 1e-9) {
     return {
@@ -138,8 +136,7 @@ function motion(r, u, direction, k) {
       }
       return result;
     }
-    // Substitute w = tan(|k|s/2); a stable quadratic avoids cancellation
-    // in inverse-trig roots when a weak field has a very large bend radius.
+
     const delta = (value - r[i]) * omega;
     const a = 2 * cross[i] * sign - delta;
     const b = 2 * perpendicular[i];

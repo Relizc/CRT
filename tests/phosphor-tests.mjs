@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { createPhosphorScreen } from "../src/phosphor-screen.js";
 import { DEFAULT_SETTINGS } from "../src/config.js";
 import { createFakeDOM } from "./helpers.js";
@@ -41,10 +40,7 @@ image.data[3] = 1;
 screen.decay(0.001);
 assert.equal(image.data[3], 1, "clear resets fractional decay carry");
 assert.equal(DEFAULT_SETTINGS.persistence, 0.3);
-assert.match(
-  readFileSync(new URL("../CRT.html", import.meta.url), "utf8"),
-  /id="persistence"\s+type="number"\s+value="0\.3"/,
-);
+
 console.log(
   "Complete decay, exponential timing, clear and 0.3 s default passed.",
 );

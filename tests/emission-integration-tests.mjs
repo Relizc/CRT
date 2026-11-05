@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import { Simulation } from "../src/simulation.js";
+import { LabController } from "../src/lab-controller.js";
 import { FUNCTION_TIME_SCALE } from "../src/config.js";
-import { createControls } from "../src/controls.js";
-import { createFakeDOM } from "./helpers.js";
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-10, `${a} vs ${b}`);
 
 function context({
@@ -14,11 +12,9 @@ function context({
   const spots = [],
     births = [],
     currentTimes = [];
-  const { element, document } = createFakeDOM();
-  element("loop").checked = loop;
-  const state = new Simulation((result, brightness) =>
-    spots.push({ ...result, brightness }),
-  );
+  const controller = new LabController();
+  const state = controller.simulation;
+  state.onImpact = (result, brightness) => spots.push({ ...result, brightness });
   state.valid = true;
   state.loop = loop;
   Object.assign(state.settings, { fireRate: rate, duration });
@@ -32,35 +28,22 @@ function context({
     births.push(record);
     return record;
   };
-  const screen = {
-    clear() {
-      spots.length = 0;
-    },
-    update() {},
-    exportPNG() {},
-  };
-  const controls = createControls(state, screen, undefined, () =>
-    controls.refresh(),
-  );
+  controller.onClearScreen = () => { spots.length = 0; };
   return {
     state,
     spots,
     births,
     currentTimes,
-    element,
+    controller,
     step(delta) {
-      globalThis.document = document;
       if (state.running && state.valid) state.advance(delta);
-      controls.refresh();
     },
     frame(delta) {
-      globalThis.document = document;
       state.tick(Math.min(delta, 0.05));
-      controls.refresh();
     },
     click(id) {
-      globalThis.document = document;
-      element(id).handlers.click();
+      const methods = { fire: "fire", play: "toggleRunning", restart: "restart" };
+      controller[methods[id]]();
     },
   };
 }
@@ -150,8 +133,8 @@ assert.equal(new Set(single.births.map((electron) => electron.id)).size, 3);
 assert.equal(new Set(single.births.map((electron) => electron.r)).size, 3);
 assert.equal(new Set(single.births.map((electron) => electron.u)).size, 3);
 assert.equal(
-  single.element("fire").disabled,
-  false,
+  single.controller.snapshot().canFire,
+  true,
   "Fire remains available during existing flights",
 );
 single.step(0.1);

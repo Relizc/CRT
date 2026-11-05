@@ -91,5 +91,9 @@ export function createCoils(scene) {
       });
     });
   }
-  return { setCurrents, animate, setVisible(visible) { group.visible = visible; } };
+  return {
+    setCurrents,
+    animate,
+    setVisible(visible) { group.visible = visible; },
+  };
 }

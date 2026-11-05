@@ -13,6 +13,7 @@ const FUNCTIONS = Object.freeze({
   cosh: Math.cosh,
   tanh: Math.tanh,
   abs: Math.abs,
+  floor: Math.floor,
   sqrt: Math.sqrt,
   exp: Math.exp,
   ln: Math.log,
@@ -38,19 +39,14 @@ function tokenize(latex) {
     .replace(/[−–]/g, "-")
     .replace(/[×·⋅]/g, "*")
     .replace(/π/g, "\\pi ")
-    .replace(/\u2062/g, "*");
+    .replace(/\u2062/g, "*")
+    .replace(/\\text\{\s*if\s*\}/g, "");
 
-  // Permit a familiar current definition, but never arbitrary assignments.
-  if (source.includes("=")) {
-    const parts = source.split("=");
-    const left = parts[0].replace(/\s/g, "").replace(/[{}]/g, "");
-    if (parts.length !== 2 || !/^I(?:_[xXyYhHvV])?(?:\(t\))?$/.test(left)) {
-      throw new Error(
-        "Use an expression in t, optionally starting with I_x(t) = or I_y(t) =.",
-      );
-    }
-    source = parts[1];
-  }
+  // Strip only a current-definition prefix. Equality inside conditions stays.
+  source = source.replace(
+    /^I(?:_\s*(?:\{[xXyYhHvV]\}|[xXyYhHvV]))?(?:\s*\(\s*t\s*\))?\s*=(?!=)/,
+    "",
+  );
 
   const tokens = [];
   let cursor = 0;
@@ -62,6 +58,27 @@ function tokenize(latex) {
       continue;
     }
     const position = cursor + 1;
+    const environment = rest.match(/^\\(begin|end)\{cases\}/);
+    if (environment) {
+      tokens.push({ type: environment[1] === "begin" ? "cases" : "endcases", position });
+      cursor += environment[0].length;
+      continue;
+    }
+    const otherwise = rest.match(/^\\(?:text|mathrm)\{\s*(otherwise|else)\s*\}/);
+    if (otherwise) {
+      tokens.push({ type: "otherwise", position }); cursor += otherwise[0].length; continue;
+    }
+    if (rest.startsWith("\\\\")) {
+      tokens.push({ type: "row", position }); cursor += 2; continue;
+    }
+    if (rest.startsWith("\\{") || rest.startsWith("\\}")) {
+      tokens.push({ type: rest[1], position }); cursor += 2; continue;
+    }
+    const comparison = rest.match(/^(<=|>=|!=|<|>|=|≤|≥|≠)/);
+    if (comparison) {
+      tokens.push({ type: ({ "≤": "<=", "≥": ">=", "≠": "!=" })[comparison[0]] || comparison[0], position });
+      cursor += comparison[0].length; continue;
+    }
     const numeric = rest.match(/^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/);
     if (numeric) {
       const value = Number(numeric[0]);
@@ -89,6 +106,14 @@ function tokenize(latex) {
         tokens.push({ type: "*", position });
       else if (["frac", "dfrac", "tfrac"].includes(name))
         tokens.push({ type: "frac", position });
+      else if (["le", "leq", "leqslant", "ge", "geq", "geqslant", "ne", "neq"].includes(name))
+        tokens.push({ type: name.startsWith("le") ? "<=" : name.startsWith("ge") ? ">=" : "!=", position });
+      else if (name === "lfloor")
+        tokens.push({ type: "function", value: "floor", position }, { type: "(", position });
+      else if (name === "rfloor") tokens.push({ type: ")", position });
+      else if (name === "lbrace" || name === "rbrace")
+        tokens.push({ type: name === "lbrace" ? "{" : "}", position });
+      else if (name === "otherwise" || name === "else") tokens.push({ type: "otherwise", position });
       else if (name === "t") tokens.push({ type: "variable", position });
       else if (name === "pi" || name === "e")
         tokens.push({
@@ -104,7 +129,7 @@ function tokenize(latex) {
         );
       continue;
     }
-    if ("+-*/^(){}[],".includes(rest[0])) {
+    if ("+-*/^(){}[],:&".includes(rest[0])) {
       tokens.push({ type: rest[0], position });
       cursor += 1;
       continue;
@@ -131,14 +156,75 @@ export function compileExpression(latex) {
     return take();
   };
   const startsTerm = (type) =>
-    ["number", "variable", "function", "frac", "(", "{", "["].includes(type);
+    ["number", "variable", "function", "frac", "cases", "(", "{", "["].includes(type);
 
+  const comparisons = {
+    "<": (a, b) => a < b, "<=": (a, b) => a <= b,
+    ">": (a, b) => a > b, ">=": (a, b) => a >= b,
+    "=": (a, b) => a === b, "!=": (a, b) => a !== b,
+  };
+  const isComparison = () => Object.hasOwn(comparisons, peek().type);
+  function condition(left = sum()) {
+    const pairs = [];
+    if (!isComparison()) fail("Expected a comparison such as t < 0.5");
+    while (isComparison()) {
+      const compare = comparisons[take().type], right = sum();
+      pairs.push({ compare, right });
+    }
+    return (t) => {
+      let previous = left(t);
+      for (const { compare, right } of pairs) {
+        const next = right(t);
+        if (!compare(previous, next)) return false;
+        previous = next;
+      }
+      return true;
+    };
+  }
+  function piecewise(branches, fallback = () => NaN) {
+    return (t) => {
+      for (const { test, value } of branches) if (test(t)) return value(t);
+      return fallback(t);
+    };
+  }
   function group() {
     const opening = take().type;
     const closing = { "(": ")", "{": "}", "[": "]" }[opening];
     const expression = sum();
+    if (opening === "{" && isComparison()) {
+      const branches = [];
+      let left = expression;
+      while (true) {
+        const test = condition(left);
+        expect(":");
+        branches.push({ test, value: sum() });
+        if (peek().type !== ",") { expect(closing); return piecewise(branches); }
+        take();
+        left = sum();
+        if (!isComparison()) { expect(closing); return piecewise(branches, left); }
+      }
+    }
     expect(closing);
     return expression;
+  }
+  function cases() {
+    expect("cases");
+    const branches = [];
+    let fallback;
+    while (peek().type !== "endcases") {
+      if (fallback) fail("The default case must be last");
+      const value = sum();
+      if (peek().type === "&") {
+        take();
+        if (peek().type === "otherwise") { take(); fallback = value; }
+        else branches.push({ test: condition(), value });
+      } else fallback = value;
+      if (peek().type === "row") take();
+      else if (peek().type !== "endcases") fail("Expected a new cases row");
+    }
+    expect("endcases");
+    if (!branches.length && !fallback) fail("Enter at least one case");
+    return piecewise(branches, fallback);
   }
 
   function primary() {
@@ -152,7 +238,8 @@ export function compileExpression(latex) {
     } else if (token.type === "variable") {
       take();
       result = (t) => t;
-    } else if (["(", "{", "["].includes(token.type)) result = group();
+    } else if (token.type === "cases") result = cases();
+    else if (["(", "{", "["].includes(token.type)) result = group();
     else if (token.type === "frac") {
       take();
       if (peek().type !== "{") fail("Use \\frac{numerator}{denominator}");

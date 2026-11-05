@@ -58,10 +58,9 @@ assert.deepEqual(electron.trail.at(-1), electron.r);
 console.log("Manual paths passed: full visited history, independent repeated shots, persistence after impact or miss, unchanged stream tails, and Restart clearing.");
 
 // Clear paths is a drawing operation: particles, fields and the clock continue.
-const { createControls } = await import("../src/controls.js");
-const { createFakeDOM } = await import("./helpers.js");
-const { element } = createFakeDOM();
-const clearing = new Simulation();
+const { LabController } = await import("../src/lab-controller.js");
+const controller = new LabController();
+const clearing = controller.simulation;
 clearing.valid = true;
 clearing.functions = [() => 0.1, () => 0.1];
 clearing.setSourceMode("single");
@@ -70,11 +69,9 @@ const flying = clearing.fire(); clearing.advance(0.1);
 const position = flying.r.slice(), before = structuredClone(flying);
 delete before.trail;
 const clock = clearing.cloud.time, phase = clearing.time, impacts = clearing.impacts;
-let phosphorClears = 0, visible = true;
-createControls(clearing, { clear() { phosphorClears++; } }, {
-  coils: { setVisible(value) { visible = value; } },
-}, () => {});
-element("clear-paths").handlers.click();
+let phosphorClears = 0;
+controller.onClearScreen = () => { phosphorClears++; };
+controller.clearPaths();
 assert.equal(clearing.cloud.completedShots.length, 0);
 assert.deepEqual(flying.trail, [position]);
 const after = { ...flying }; delete after.trail;
@@ -84,11 +81,11 @@ assert.equal(clearing.time, phase);
 assert.equal(clearing.impacts, impacts);
 assert.equal(phosphorClears, 0);
 assert.equal(clearing.running, true);
-element("coils").checked = false; element("coils").handlers.change();
-assert.equal(visible, false);
+controller.setOption("coils", false);
+assert.equal(controller.snapshot().options.coils, false);
 assert.deepEqual({ ...flying, trail: undefined }, { ...before, trail: undefined });
-element("coils").checked = true; element("coils").handlers.change();
-assert.equal(visible, true);
+controller.setOption("coils", true);
+assert.equal(controller.snapshot().options.coils, true);
 clearing.advance(0.1);
 assert.ok(flying.trail.length > 1);
 assert.deepEqual(flying.trail[0], position);

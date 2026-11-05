@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createPhosphorScreen } from "../src/phosphor-screen.js";
-import { createControls } from "../src/controls.js";
-import { Simulation } from "../src/simulation.js";
+import { LabController } from "../src/lab-controller.js";
 import { createFakeDOM } from "./helpers.js";
 
 const { element, gradients, fills, downloads } = createFakeDOM();
-const simulation = new Simulation();
+const controller = new LabController();
+const simulation = controller.simulation;
 Object.entries(simulation.settings).forEach(
   ([id, value]) => (element(id).value = String(value)),
 );
@@ -70,24 +70,13 @@ assert.deepEqual(draw(5).gradients[0].coordinates, [480, 510, 0, 480, 510, 16]);
 
 // Exercise the exported controls against a real live Simulation.
 let clearCalls = 0;
-const controls = createControls(
-  simulation,
-  {
-    ...screen,
-    clear() {
-      clearCalls++;
-    },
-  },
-  undefined,
-  () => controls.refresh(),
-);
+controller.onClearScreen = () => { clearCalls++; };
 const electron = simulation.cloud.launch();
 simulation.cloud.advanceTo(0.1, () => ({ ix: 0, iy: 0 }));
 simulation.emissions.advanceEmission(0.1, 7, () => {});
 const before = structuredClone(electron),
   phase = simulation.emissions.phase;
-element("brightness").value = "50";
-element("brightness").handlers.input();
+controller.setSetting("brightness", "50");
 assert.equal(simulation.settings.brightness, 50);
 assert.equal(simulation.cloud.particles[0], electron);
 assert.deepEqual(electron, before);
@@ -95,10 +84,9 @@ assert.equal(simulation.cloud.time, 0.1);
 assert.equal(simulation.emissions.phase, phase);
 assert.equal(clearCalls, 0);
 for (const invalid of ["-0.5", "50.5", "not a number"]) {
-  element("brightness").value = invalid;
-  element("brightness").handlers.input();
+  controller.setSetting("brightness", invalid);
   assert.equal(simulation.settings.brightness, 50);
-  assert.ok(element("settings-error").textContent.length > 0);
+  assert.ok(controller.settingsError.length > 0);
   assert.deepEqual(electron, before);
 }
 screen.exportPNG();

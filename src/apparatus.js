@@ -6,8 +6,7 @@ import { createGuideRay } from "./guide-ray.js";
 import { createParticleView } from "./particle-view.js";
 
 // All apparatus coordinates are in metres. This component owns the 3D scene.
-export function createApparatus(viewport, screenCanvas) {
-  const $ = (id) => document.getElementById(id);
+export function createApparatus(viewport, screenCanvas, onError = () => {}) {
   let renderer, scene, camera, controls, glassGroup;
   const labels = [];
   const screenTexture = new THREE.CanvasTexture(screenCanvas);
@@ -256,19 +255,18 @@ export function createApparatus(viewport, screenCanvas) {
   );
   label("30 cm", [0.195, 0, 0.5], true);
   const particles = createParticleView(scene);
-  new ResizeObserver(() => {
+  const resizeObserver = new ResizeObserver(() => {
     const { width, height } = viewport.getBoundingClientRect();
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-  }).observe(viewport);
-  renderer.domElement.addEventListener("webglcontextlost", (event) => {
-    event.preventDefault();
-    $("loading").textContent =
-      "The 3D graphics context was interrupted. Reload the file to restore the apparatus.";
-    $("loading").style.display = "grid";
   });
-  $("loading").style.display = "none";
+  resizeObserver.observe(viewport);
+  const onContextLost = (event) => {
+    event.preventDefault();
+    onError("The 3D graphics context was interrupted. Reload to restore the apparatus.");
+  };
+  renderer.domElement.addEventListener("webglcontextlost", onContextLost);
 
   function setView(name) {
     const views = {
@@ -296,11 +294,31 @@ export function createApparatus(viewport, screenCanvas) {
     });
     renderer.render(scene, camera);
   }
+  function dispose() {
+    resizeObserver.disconnect();
+    controls.dispose();
+    renderer.domElement.removeEventListener("webglcontextlost", onContextLost);
+    const geometries = new Set(), materials = new Set(), textures = new Set([screenTexture]);
+    scene.traverse(object => {
+      if (object.geometry) geometries.add(object.geometry);
+      for (const material of [object.material].flat().filter(Boolean)) {
+        materials.add(material);
+        Object.values(material).forEach(value => { if (value?.isTexture) textures.add(value); });
+      }
+    });
+    geometries.forEach(geometry => geometry.dispose());
+    materials.forEach(material => material.dispose());
+    textures.forEach(texture => texture.dispose());
+    renderer.dispose();
+    renderer.domElement.remove();
+    labels.forEach(({element}) => element.remove());
+  }
   return {
     coils,
     guide,
     particles,
     render,
+    dispose,
     setView,
     setGlass(visible) {
       glassGroup.visible = visible;

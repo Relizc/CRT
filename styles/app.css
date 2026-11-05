@@ -452,3 +452,6 @@ details p {
     margin-bottom: 12px;
   }
 }
+
+/* React leaves this host's canvas and projection labels to Three.js. */
+.apparatus-canvas { position: absolute; inset: 0; }

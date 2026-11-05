@@ -1,17 +1,26 @@
 {
   "name": "crt-electron-optics",
   "version": "1.0.0",
-  "description": "Modular CRT electron optics simulation",
+  "description": "Frontend-only React and Three.js CRT simulation built with Vite",
   "scripts": {
-    "dev": "python3 -m http.server 8765 --bind 127.0.0.1",
-    "build": "node build.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
     "test": "node --test tests/*-tests.mjs"
   },
   "type": "module",
   "dependencies": {
-    "esbuild": "0.28.2",
     "mathlive": "0.111.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "three": "0.186.1"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.2.1",
+    "vite": "8.3.6"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
 }
